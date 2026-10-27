@@ -53,6 +53,7 @@ closeOnOutside := true
 closeAfterApply := true
 shortcutCloses := false
 settingsOpen := false
+isRendering := false
 
 mainGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Border", APP_TITLE)
 mainGui.BackColor := BG
@@ -188,7 +189,7 @@ TogglePalette() {
 }
 
 ShowPalette() {
-    global opened, W, BAR_H, mainGui, listGui, search, settingsOpen, lastActivity, lastShown
+    global opened, W, BAR_H, HDR_H, ROW_H, MAX_ROWS, mainGui, listGui, search, settingsOpen, lastActivity, lastShown
     x := 0, y := 0
     MouseGetPos(&mx, &my)
     x := mx - 192
@@ -330,64 +331,71 @@ CompareRows(a, b) {
 }
 
 RenderResults() {
-    global results, selected, scrollStart, rowIndexByHwnd, listGui, mainGui, settingsGui, settingsOpen, W, HDR_H, ROW_H, MAX_ROWS, query
-    rowIndexByHwnd := Map()
-    listGui.Destroy()
-    listGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Border", "FX Console Results")
-    listGui.BackColor := "18191B"
-    listGui.MarginX := 0, listGui.MarginY := 0
-    listGui.SetFont("s9 cF3F4F6", "Segoe UI")
-    listGui.OnEvent("ContextMenu", (*) => 1)
-    if !query {
-        listGui.Hide()
-        settingsGui.Hide()
+    global results, selected, scrollStart, rowIndexByHwnd, listGui, mainGui, settingsGui, W, HDR_H, ROW_H, MAX_ROWS, query, isRendering
+    if isRendering
         return
-    }
-    rowsShown := Min(MAX_ROWS, results.Length - scrollStart + 1)
-    lastVisible := scrollStart + rowsShown - 1
-    visiblePresets := 0, visibleEffects := 0
-    for index, item in results {
-        if index < scrollStart
-            continue
-        if index > lastVisible
-            break
-        if item.group = "Presets"
-            visiblePresets += 1
-        else
-            visibleEffects += 1
-    }
-    headerCount := (visiblePresets ? 1 : 0) + (visibleEffects ? 1 : 0)
-    height := results.Length ? (headerCount * HDR_H + rowsShown * ROW_H) : (2 * HDR_H + 36)
-    y := 44
-    mainGui.GetPos(&x, &top)
-    listGui.Show("x" x " y" (top + y) " w" W " h" height " NoActivate")
-    if !results.Length {
-        AddHeader(listGui, "#EF4444", "Presets", 0, 0)
-        AddHeader(listGui, "#3B82F6", "Effects", 0, HDR_H)
-        note := listGui.AddText("x0 y52 w384 h30 Center c6E717A Background18191B", "no match — try another name")
-        return
-    }
-    groups := ["Presets", "Effects"]
-    yOff := 0
-    for group in groups {
-        count := 0
-        for item in results
-            if item.group = group
-                count += 1
-        if !count
-            continue
-        AddHeader(listGui, group = "Presets" ? "#EF4444" : "#3B82F6", group, count, yOff)
-        yOff += HDR_H
+    isRendering := true
+    try {
+        rowIndexByHwnd := Map()
+        listGui.Destroy()
+        listGui := Gui("-Caption +AlwaysOnTop +ToolWindow +Border", "FX Console Results")
+        listGui.BackColor := "18191B"
+        listGui.MarginX := 0, listGui.MarginY := 0
+        listGui.SetFont("s9 cF3F4F6", "Segoe UI")
+        listGui.OnEvent("ContextMenu", (*) => 1)
+        if !query {
+            listGui.Hide()
+            settingsGui.Hide()
+            return
+        }
+        rowsShown := Min(MAX_ROWS, results.Length - scrollStart + 1)
+        lastVisible := scrollStart + rowsShown - 1
+        visiblePresets := 0, visibleEffects := 0
         for index, item in results {
             if index < scrollStart
                 continue
             if index > lastVisible
                 break
-            if item.group != group
-                continue
-            AddResultRow(listGui, item, index, yOff)
-            yOff += ROW_H
+            if item.group = "Presets"
+                visiblePresets += 1
+            else
+                visibleEffects += 1
         }
+        headerCount := (visiblePresets ? 1 : 0) + (visibleEffects ? 1 : 0)
+        height := results.Length ? (headerCount * HDR_H + rowsShown * ROW_H) : (2 * HDR_H + 36)
+        y := 44
+        mainGui.GetPos(&x, &top)
+        listGui.Show("x" x " y" (top + y) " w" W " h" height " NoActivate")
+        if !results.Length {
+            AddHeader(listGui, "#EF4444", "Presets", 0, 0)
+            AddHeader(listGui, "#3B82F6", "Effects", 0, HDR_H)
+            listGui.AddText("x0 y52 w384 h30 Center c6E717A Background18191B", "no match — try another name")
+            return
+        }
+        groups := ["Presets", "Effects"]
+        yOff := 0
+        for group in groups {
+            count := 0
+            for item in results
+                if item.group = group
+                    count += 1
+            if !count
+                continue
+            AddHeader(listGui, group = "Presets" ? "#EF4444" : "#3B82F6", group, count, yOff)
+            yOff += HDR_H
+            for index, item in results {
+                if index < scrollStart
+                    continue
+                if index > lastVisible
+                    break
+                if item.group != group
+                    continue
+                AddResultRow(listGui, item, index, yOff)
+                yOff += ROW_H
+            }
+        }
+    } finally {
+        isRendering := false
     }
 }
 
@@ -561,8 +569,8 @@ WM_LBUTTONDOWN(wParam, lParam, msg, hwnd) {
 }
 
 WM_MOUSEMOVE(wParam, lParam, msg, hwnd) {
-    global rowIndexByHwnd, selected, scrollStart, MAX_ROWS
-    if !rowIndexByHwnd.Has(hwnd)
+    global rowIndexByHwnd, selected, scrollStart, MAX_ROWS, isRendering
+    if isRendering || !rowIndexByHwnd.Has(hwnd)
         return
     index := rowIndexByHwnd[hwnd]
     if index = selected
